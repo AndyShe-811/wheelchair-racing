@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>殘奧競速輪椅：橢圓賽道與翻車模擬</title>
+    <style>
+        body { font-family: sans-serif; background: #121212; color: white; display: flex; flex-direction: column; align-items: center; padding: 20px; }
+        .panel { background: #1e1e1e; padding: 20px; border-radius: 10px; width: 100%; max-width: 800px; margin-bottom: 20px; }
+        label { display: block; margin: 10px 0 5px; }
+        input[type="range"] { width: 100%; }
+        button { background: #00ff88; border: none; padding: 10px 20px; font-size: 16px; font-weight: bold; border-radius: 5px; cursor: pointer; margin-top: 10px; width: 100%;}
+        canvas { background: #2a2a2a; border-radius: 10px; box-shadow: 0 0 10px rgba(0,0,0,0.5); }
+        #log { color: #ff4444; font-weight: bold; text-align: center; margin-top: 10px; height: 24px;}
+    </style>
+</head>
+<body>
+
+    <div class="panel">
+        <h2>🛠️ 科技車庫與物理設定</h2>
+        <label>後輪傾角 (Camber): <span id="cam-val">10</span>° (影響轉彎穩定度與直線摩擦力)</label>
+        <input type="range" id="camber" min="0" max="20" value="10">
+        
+        <label>重心高度 (CG Height): <span id="cg-val">5</span> (高重心推力佳，但過彎易翻車)</label>
+        <input type="range" id="cg" min="1" max="10" value="5">
+        
+        <button id="start">開始模擬比賽</button>
+        <div id="log"></div>
+    </div>
+
+    <canvas id="track" width="800" height="400"></canvas>
+
+<script>
+    const canvas = document.getElementById('track');
+    const ctx = canvas.getContext('2d');
+    const log = document.getElementById('log');
+    
+    // UI 更新
+    document.getElementById('camber').oninput = (e) => document.getElementById('cam-val').innerText = e.target.value;
+    document.getElementById('cg').oninput = (e) => document.getElementById('cg-val').innerText = e.target.value;
+
+    // 賽道幾何設定 (橢圓形)
+    const trackCenter = { x: 400, y: 200 };
+    const rx = 300; // 橢圓 X 軸半徑 (直線段感受)
+    const ry = 120; // 橢圓 Y 軸半徑 (彎道段感受)
+
+    let progress = 0; // 跑道進度 (角度 0 到 Math.PI * 2)
+    let isRacing = false;
+    let crashed = false;
+
+    // 畫出賽道
+    function drawTrack() {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        ctx.beginPath();
+        ctx.ellipse(trackCenter.x, trackCenter.y, rx, ry, 0, 0, Math.PI * 2);
+        ctx.lineWidth = 40;
+        ctx.strokeStyle = '#444';
+        ctx.stroke();
+        
+        // 起跑線
+        ctx.beginPath();
+        ctx.moveTo(trackCenter.x + rx - 20, trackCenter.y);
+        ctx.lineTo(trackCenter.x + rx + 20, trackCenter.y);
+        ctx.lineWidth = 4;
+        ctx.strokeStyle = '#fff';
+        ctx.stroke();
+    }
+
+    // 畫出競速輪椅 (俯視圖)
+    function drawWheelchair(x, y, angle, color, isCrashed) {
+        ctx.save();
+        ctx.translate(x, y);
+        ctx.rotate(angle);
+        
+        if (isCrashed) {
+            ctx.fillText("💥翻車!", -15, -20);
+            ctx.rotate(Math.PI / 2); // 翻車視覺效果
+        }
+
+        ctx.fillStyle = color;
+        // 車架 (長條形)
+        ctx.fillRect(-20, -4, 40, 8);
+        // 前輪
+        ctx.beginPath(); ctx.arc(20, 0, 5, 0, Math.PI*2); ctx.fill();
+        
+        // 兩個大後輪 (根據傾角可以用寬度來視覺化)
+        ctx.fillStyle = '#fff';
+        ctx.fillRect(-15, -15, 20, 4); // 左後輪
+        ctx.fillRect(-15, 11, 20, 4);  // 右後輪
+        
+        ctx.restore();
+    }
+
+    function startRace() {
+        if (isRacing) return;
+        isRacing = true;
+        crashed = false;
+        progress = 0;
+        log.innerText = "";
+        
+        const camber = parseFloat(document.getElementById('camber').value);
+        const cg = parseFloat(document.getElementById('cg').value);
+        
+        function animate() {
+            if (!isRacing) return;
+            drawTrack();
+            
+            // 計算當前位置 (橢圓參數式)
+            const x = trackCenter.x + rx * Math.cos(progress);
+            const y = trackCenter.y + ry * Math.sin(progress);
+            
+            // 計算切線角度讓輪椅轉向
+            const dx = -rx * Math.sin(progress);
+            const dy = ry * Math.cos(progress);
+            const angle = Math.atan2(dy, dx);
+
+            // 判斷是否在彎道 (利用 Y 座標的變化率來概算，接近左右兩端時為彎道)
+            const inCurve = Math.abs(Math.cos(progress)) > 0.7; 
+
+            // 物理與速度邏輯
+            let speed = 0;
+            if (inCurve) {
+                // 彎道速度公式與翻車判定
+                speed = 0.015 + (camber * 0.0005) - (cg * 0.0002);
+                
+                // 翻車穩定度門檻：傾角太小且重心太高，承受不住離心力
+                const stability = camber - cg; 
+                if (stability < -2) {
+                    crashed = true;
+                    isRacing = false;
+                    log.innerText = "❌ 發生意外！重心過高且傾角不足，選手在彎道翻車了！";
+                }
+            } else {
+                // 直線速度公式
+                speed = 0.015 - (camber * 0.0003) + (cg * 0.0005);
+            }
+
+            drawWheelchair(x, y, angle, '#00ff88', crashed);
+
+            if (!crashed) {
+                progress += speed;
+                if (progress >= Math.PI * 2) {
+                    isRacing = false;
+                    log.style.color = '#00ff88';
+                    log.innerText = "🏆 順利完賽！";
+                    progress = 0;
+                } else {
+                    requestAnimationFrame(animate);
+                }
+            }
+        }
+        animate();
+    }
+
+    document.getElementById('start').addEventListener('click', startRace);
+    drawTrack(); // 初始畫面
+</script>
+</body>
+</html>
