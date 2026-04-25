@@ -42,7 +42,7 @@
     <div class="sidebar">
         <div class="panel">
             <h2>🗺️ 手繪賽道工作室</h2>
-            <p style="font-size: 14px; color: #aaa;">點擊開始手繪後，在右側按住滑鼠畫賽道。起終點請連在一起，已切換為極度寬容的「街機物理模式」！</p>
+            <p style="font-size: 14px; color: #aaa;">已升級為「精準平衡模式」：高傾角直線會變慢，重心太高過急彎必翻車！</p>
             <button id="btn-draw" style="background: #3498db;">✍️ 開始手繪新賽道</button>
             <button id="btn-default" style="background: #555;">🔄 恢復預設橢圓形</button>
         </div>
@@ -123,7 +123,8 @@
             let angleDiff = Math.abs(Math.atan2(pNext.y - pCurrent.y, pNext.x - pCurrent.x) - 
                                      Math.atan2(pCurrent.y - pPrev.y, pCurrent.x - pPrev.x));
             if (angleDiff > Math.PI) angleDiff = (Math.PI * 2) - angleDiff;
-            pCurrent.sharpness = angleDiff * 0.8; 
+            // 係數調整：保留一定程度的防手震，但依然反映真實角度
+            pCurrent.sharpness = angleDiff * 0.7; 
         }
     }
 
@@ -227,7 +228,6 @@
         if(isRacing) return;
         editingIndex = index;
         const r = racers[index];
-        
         document.getElementById('r-name').value = r.name;
         document.getElementById('r-cam').value = r.camber;
         document.getElementById('val-cam').innerText = r.camber;
@@ -236,17 +236,13 @@
         document.getElementById('r-color').value = r.color;
 
         garageTitle.innerText = "✏️ 編輯選手參數";
-        addBtn.innerText = "💾 儲存修改";
-        addBtn.style.background = "#f39c12"; 
-        cancelEditBtn.style.display = "block"; 
+        addBtn.innerText = "💾 儲存修改"; addBtn.style.background = "#f39c12"; cancelEditBtn.style.display = "block"; 
     };
 
     function cancelEdit() {
         editingIndex = -1;
-        garageTitle.innerText = "🛠️ 新增參賽選手";
-        addBtn.innerText = "➕ 加入比賽陣容";
-        addBtn.style.background = "#444";
-        cancelEditBtn.style.display = "none";
+        garageTitle.innerText = "🛠️ 新增參賽選手"; addBtn.innerText = "➕ 加入比賽陣容";
+        addBtn.style.background = "#444"; cancelEditBtn.style.display = "none";
         document.getElementById('r-name').value = "";
     }
     cancelEditBtn.addEventListener('click', cancelEdit);
@@ -254,8 +250,7 @@
     window.deleteRacer = function(index) {
         if(isRacing) return;
         racers.splice(index, 1);
-        if(editingIndex === index) cancelEdit(); 
-        updateRacerList();
+        if(editingIndex === index) cancelEdit(); updateRacerList();
     };
 
     addBtn.addEventListener('click', () => {
@@ -264,12 +259,8 @@
         const cg = parseFloat(document.getElementById('r-cg').value);
         const color = document.getElementById('r-color').value;
 
-        if (editingIndex === -1) {
-            racers.push({ name, camber, cg, color, progress: 0, crashed: false });
-        } else {
-            racers[editingIndex] = { name, camber, cg, color, progress: 0, crashed: false };
-            cancelEdit(); 
-        }
+        if (editingIndex === -1) { racers.push({ name, camber, cg, color, progress: 0, crashed: false }); } 
+        else { racers[editingIndex] = { name, camber, cg, color, progress: 0, crashed: false }; cancelEdit(); }
         updateRacerList();
     });
 
@@ -311,25 +302,27 @@
                 const currentPoint = trackPoints[pointIndex];
                 let speedStep = 0;
                 
-                // 離心力判斷 (極度寬容的街機模式)
-                if (currentPoint.sharpness > 0.05) { 
-                    speedStep = 1.5 + (p.camber * 0.05) - (p.cg * 0.02);
+                // 判定是否為彎道 (臨界值設為 0.08)
+                const safeSharpness = Math.min(currentPoint.sharpness, 0.8);
+
+                if (safeSharpness > 0.08) { 
+                    // 在彎道中：高傾角稍微加快過彎，高重心稍微變慢
+                    speedStep = 1.2 + (p.camber * 0.04) - (p.cg * 0.015);
                     
-                    // 1. 限制最大銳利度，防止單點突刺
-                    let safeSharpness = Math.min(currentPoint.sharpness, 0.8);
+                    // 離心力 vs 車輛抗性 的對決
+                    const curveForce = safeSharpness * 55; // 離心力放大係數
+                    const stabilityResistance = (p.camber * 1.5) - (p.cg * 1.0); // 傾角增加抗性，重心降低抗性
+                    const stability = stabilityResistance - curveForce;
                     
-                    // 2. 大幅降低彎道懲罰 (原本是 * 60)
-                    const curveDifficulty = safeSharpness * 20; 
-                    const stability = (p.camber - p.cg) - curveDifficulty; 
-                    
-                    // 3. 翻車門檻放寬 (原本是 -8)
+                    // 如果抗性無法抵消離心力，且差值小於 -15 則翻車
                     if (stability < -15) { 
                         p.crashed = true;
                         crashMarks.push({ x: currentPoint.x, y: currentPoint.y, color: p.color, name: p.name });
                         return; 
                     }
                 } else {
-                    speedStep = 1.5 - (p.camber * 0.03) + (p.cg * 0.05);
+                    // 在直道中：低傾角速度極快，高傾角產生摩擦力大幅減速
+                    speedStep = 2.0 - (p.camber * 0.05) + (p.cg * 0.02);
                 }
 
                 p.progress += speedStep;
@@ -350,7 +343,7 @@
                     statusLog.innerText = `🏆 比賽結束！冠軍是：${currentLeader.name}`;
                 } else {
                     statusLog.style.color = "#e74c3c";
-                    statusLog.innerText = "💥 全軍覆沒！你畫的賽道真的是地獄級別的！";
+                    statusLog.innerText = "💥 全軍覆沒！沒人能活著通過這個地獄賽道。";
                 }
                 return;
             }
@@ -360,9 +353,10 @@
     });
 
     createDefaultTrack();
-    racers.push({ name: "穩健過彎型", camber: 15, cg: 3, color: "#00ff88", progress: 0, crashed: false });
-    racers.push({ name: "直線加速型", camber: 2, cg: 8, color: "#3498db", progress: 0, crashed: false });
-    racers.push({ name: "極端危險型", camber: 0, cg: 10, color: "#e74c3c", progress: 0, crashed: false });
+    // 預設三個流派，展示完美的平衡機制
+    racers.push({ name: "完美過彎 (龜速)", camber: 20, cg: 1, color: "#00ff88", progress: 0, crashed: false });
+    racers.push({ name: "直線火箭 (易翻)", camber: 0, cg: 10, color: "#3498db", progress: 0, crashed: false });
+    racers.push({ name: "綜合平衡 (推薦)", camber: 12, cg: 4, color: "#f39c12", progress: 0, crashed: false });
     updateRacerList();
 </script>
 </body>
