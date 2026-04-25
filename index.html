@@ -12,7 +12,6 @@
         .sidebar { flex: 1; min-width: 300px; max-width: 400px; display: flex; flex-direction: column; gap: 20px; }
         .main-view { flex: 2; min-width: 600px; display: flex; flex-direction: column; align-items: center; }
         
-        /* 表單與按鈕樣式 */
         .control-group { margin-bottom: 15px; }
         label { display: flex; justify-content: space-between; font-size: 14px; margin-bottom: 5px; font-weight: bold; }
         input[type="range"] { width: 100%; cursor: pointer; }
@@ -22,13 +21,11 @@
         .btn-primary { background: var(--accent); color: black; font-weight: bold; font-size: 18px; padding: 15px; }
         .btn-primary:hover { background: #00cc6a; }
         
-        /* 畫布與列表清單 */
         canvas { background: #2a2a2a; border-radius: 12px; box-shadow: 0 0 20px rgba(0,0,0,0.5); width: 100%; max-width: 800px; }
         .racer-list { list-style: none; padding: 0; margin: 0; max-height: 250px; overflow-y: auto; }
         .racer-item { display: flex; justify-content: space-between; align-items: center; background: #333; padding: 10px; border-radius: 6px; margin-bottom: 8px; font-size: 14px;}
         .color-dot { width: 15px; height: 15px; border-radius: 50%; display: inline-block; margin-right: 10px; vertical-align: middle; }
         
-        /* 編輯與刪除小按鈕 */
         .action-btns { display: flex; gap: 5px; }
         .btn-small { padding: 5px 8px; font-size: 12px; width: auto; margin-top: 0; }
         .btn-edit { background: #f39c12; color: white; }
@@ -55,7 +52,6 @@
         <div class="panel">
             <h2 id="garage-title">🛠️ 新增參賽選手</h2>
             <input type="text" id="r-name" placeholder="選手名稱 (例: 選手A)">
-            
             <div class="control-group">
                 <label>後輪傾角 (0-20°): <span id="val-cam">10</span></label>
                 <input type="range" id="r-cam" min="0" max="20" value="10">
@@ -64,7 +60,6 @@
                 <label>重心高度 (1-10): <span id="val-cg">5</span></label>
                 <input type="range" id="r-cg" min="1" max="10" value="5">
             </div>
-            
             <label>代表顏色:</label>
             <input type="color" id="r-color" value="#00ff88">
             <button id="add-racer">➕ 加入比賽陣容</button>
@@ -73,8 +68,7 @@
 
         <div class="panel">
             <h3>📋 參賽名單 (<span id="racer-count">0</span>)</h3>
-            <ul class="racer-list" id="racer-list">
-                </ul>
+            <ul class="racer-list" id="racer-list"></ul>
             <button id="clear-racers" style="background:#e74c3c; margin-top:10px;">🗑️ 清空所有名單</button>
         </div>
     </div>
@@ -87,7 +81,6 @@
     </div>
 
 <script>
-    // 取得 DOM 元素
     const canvas = document.getElementById('track');
     const ctx = canvas.getContext('2d');
     const mapRxInput = document.getElementById('map-rx');
@@ -98,17 +91,19 @@
     const cancelEditBtn = document.getElementById('cancel-edit');
     const garageTitle = document.getElementById('garage-title');
 
-    // UI 數值連動
+    // 起跑線與終點線的物理常數 (改為正下方的直線道)
+    const START_LINE = Math.PI / 2; 
+    const FINISH_LINE = START_LINE + (Math.PI * 2);
+
     document.getElementById('map-rx').oninput = (e) => { document.getElementById('val-rx').innerText = e.target.value; drawTrack(); }
     document.getElementById('map-ry').oninput = (e) => { document.getElementById('val-ry').innerText = e.target.value; drawTrack(); }
     document.getElementById('r-cam').oninput = (e) => document.getElementById('val-cam').innerText = e.target.value;
     document.getElementById('r-cg').oninput = (e) => document.getElementById('val-cg').innerText = e.target.value;
 
-    // 系統狀態變數
     let racers = [];
     let crashMarks = []; 
     let isRacing = false;
-    let editingIndex = -1; // -1 代表「新增模式」，大於等於 0 代表「編輯某位選手」
+    let editingIndex = -1; 
 
     // --- 繪圖系統 ---
     function drawTrack() {
@@ -118,15 +113,17 @@
         const cx = canvas.width / 2;
         const cy = canvas.height / 2;
 
+        // 跑道主體
         ctx.beginPath();
         ctx.ellipse(cx, cy, rx, ry, 0, 0, Math.PI * 2);
         ctx.lineWidth = 40;
         ctx.strokeStyle = '#444';
         ctx.stroke();
 
+        // 終點線 (設置在正下方直線道)
         ctx.beginPath();
-        ctx.moveTo(cx + rx - 20, cy);
-        ctx.lineTo(cx + rx + 20, cy);
+        ctx.moveTo(cx, cy + ry - 20);
+        ctx.lineTo(cx, cy + ry + 20);
         ctx.lineWidth = 4;
         ctx.strokeStyle = '#fff';
         ctx.stroke();
@@ -156,7 +153,7 @@
         });
     }
 
-    // --- 選手名單管理與編輯邏輯 ---
+    // --- 選手管理邏輯 ---
     function updateRacerList() {
         document.getElementById('racer-count').innerText = racers.length;
         racerListEl.innerHTML = '';
@@ -176,13 +173,10 @@
         });
     }
 
-    // 啟動編輯模式
     window.startEdit = function(index) {
         if(isRacing) return;
         editingIndex = index;
         const r = racers[index];
-        
-        // 將該選手的資料填回表單
         document.getElementById('r-name').value = r.name;
         document.getElementById('r-cam').value = r.camber;
         document.getElementById('val-cam').innerText = r.camber;
@@ -190,35 +184,29 @@
         document.getElementById('val-cg').innerText = r.cg;
         document.getElementById('r-color').value = r.color;
 
-        // 改變 UI 狀態
         garageTitle.innerText = "✏️ 編輯選手參數";
         addBtn.innerText = "💾 儲存修改";
-        addBtn.style.background = "#f39c12"; // 橘色警告色
-        cancelEditBtn.style.display = "block"; // 顯示取消按鈕
+        addBtn.style.background = "#f39c12"; 
+        cancelEditBtn.style.display = "block"; 
     };
 
-    // 取消編輯模式
     function cancelEdit() {
         editingIndex = -1;
         garageTitle.innerText = "🛠️ 新增參賽選手";
         addBtn.innerText = "➕ 加入比賽陣容";
         addBtn.style.background = "#444";
         cancelEditBtn.style.display = "none";
-        
-        // 清空表單
         document.getElementById('r-name').value = "";
     }
     cancelEditBtn.addEventListener('click', cancelEdit);
 
-    // 刪除單一選手
     window.deleteRacer = function(index) {
         if(isRacing) return;
         racers.splice(index, 1);
-        if(editingIndex === index) cancelEdit(); // 如果正在編輯被刪除的人，就取消編輯
+        if(editingIndex === index) cancelEdit(); 
         updateRacerList();
     };
 
-    // 送出表單 (新增 或 儲存修改)
     addBtn.addEventListener('click', () => {
         const name = document.getElementById('r-name').value || `選手 ${racers.length + 1}`;
         const camber = parseFloat(document.getElementById('r-cam').value);
@@ -226,23 +214,17 @@
         const color = document.getElementById('r-color').value;
 
         if (editingIndex === -1) {
-            // 新增模式
-            racers.push({ name, camber, cg, color, progress: 0, crashed: false });
+            racers.push({ name, camber, cg, color, progress: START_LINE, crashed: false });
         } else {
-            // 編輯模式
-            racers[editingIndex] = { name, camber, cg, color, progress: 0, crashed: false };
-            cancelEdit(); // 儲存後自動回到新增模式
+            racers[editingIndex] = { name, camber, cg, color, progress: START_LINE, crashed: false };
+            cancelEdit(); 
         }
         updateRacerList();
     });
 
-    // 清空所有名單
     document.getElementById('clear-racers').addEventListener('click', () => {
         if(isRacing) return;
-        racers = []; 
-        cancelEdit();
-        updateRacerList(); 
-        drawTrack();
+        racers = []; cancelEdit(); updateRacerList(); drawTrack();
     });
 
     // --- 核心物理與賽車引擎 ---
@@ -253,9 +235,9 @@
         }
         
         isRacing = true;
-        updateRacerList(); // 觸發更新來鎖定按鈕
+        updateRacerList(); 
         crashMarks = []; 
-        racers.forEach(r => { r.progress = 0; r.crashed = false; }); 
+        racers.forEach(r => { r.progress = START_LINE; r.crashed = false; }); // 重置到起跑線
         statusLog.style.color = "white";
         statusLog.innerText = "比賽進行中...";
         
@@ -264,25 +246,22 @@
         const cx = canvas.width / 2;
         const cy = canvas.height / 2;
 
+        let currentLeader = null;
+
         function animate() {
             if (!isRacing) return;
             drawTrack();
             drawCrashes(); 
 
             let allFinishedOrCrashed = true;
-            let currentLeader = null;
 
+            // 1. 物理狀態更新 (僅計算還在跑的人)
             racers.forEach(p => {
-                if (p.crashed || p.progress >= Math.PI * 2) {
-                    if (p.progress < Math.PI * 2 && !p.crashed) allFinishedOrCrashed = false;
-                    return; 
-                }
+                if (p.crashed || p.progress >= FINISH_LINE) return; 
 
                 allFinishedOrCrashed = false; 
-                const x = cx + rx * Math.cos(p.progress);
-                const y = cy + ry * Math.sin(p.progress);
-                const angle = Math.atan2(ry * Math.cos(p.progress), -rx * Math.sin(p.progress));
 
+                // 判斷是否在彎道
                 const inCurve = Math.abs(Math.cos(p.progress)) > 0.6; 
 
                 let speed = 0;
@@ -293,6 +272,9 @@
                     
                     if (stability < -10) { 
                         p.crashed = true;
+                        // 紀錄翻車當下的確切座標
+                        const x = cx + rx * Math.cos(p.progress);
+                        const y = cy + ry * Math.sin(p.progress);
                         crashMarks.push({ x, y, color: p.color, name: p.name });
                         return; 
                     }
@@ -301,16 +283,30 @@
                 }
 
                 p.progress += speed;
-                drawWheelchair(x, y, angle, p.color);
                 
-                if (p.progress >= Math.PI * 2 && !currentLeader) {
+                // 抵達終點判定
+                if (p.progress >= FINISH_LINE && !currentLeader) {
                     currentLeader = p;
                 }
             });
 
+            // 2. 畫面繪製 (畫出所有沒翻車的人，包含已經過線停下的)
+            racers.forEach(p => {
+                if (p.crashed) return; 
+                
+                // 將畫圖位置鎖死在終點線，避免過線後繼續跑
+                const drawProg = Math.min(p.progress, FINISH_LINE); 
+                const x = cx + rx * Math.cos(drawProg);
+                const y = cy + ry * Math.sin(drawProg);
+                const angle = Math.atan2(ry * Math.cos(drawProg), -rx * Math.sin(drawProg));
+                
+                drawWheelchair(x, y, angle, p.color);
+            });
+
+            // 3. 結算
             if (allFinishedOrCrashed) {
                 isRacing = false;
-                updateRacerList(); // 解鎖按鈕
+                updateRacerList(); 
                 if (currentLeader) {
                     statusLog.style.color = currentLeader.color;
                     statusLog.innerText = `🏆 比賽結束！冠軍是：${currentLeader.name}`;
@@ -325,12 +321,10 @@
         animate();
     });
 
-    // 初始載入
     drawTrack();
-    // 預先塞入三名不同流派的選手供測試
-    racers.push({ name: "穩健過彎型", camber: 15, cg: 3, color: "#00ff88", progress: 0, crashed: false });
-    racers.push({ name: "直線加速型", camber: 2, cg: 8, color: "#3498db", progress: 0, crashed: false });
-    racers.push({ name: "極端危險型", camber: 0, cg: 10, color: "#e74c3c", progress: 0, crashed: false });
+    racers.push({ name: "穩健過彎型", camber: 15, cg: 3, color: "#00ff88", progress: START_LINE, crashed: false });
+    racers.push({ name: "直線加速型", camber: 2, cg: 8, color: "#3498db", progress: START_LINE, crashed: false });
+    racers.push({ name: "極端危險型", camber: 0, cg: 10, color: "#e74c3c", progress: START_LINE, crashed: false });
     updateRacerList();
 
 </script>
