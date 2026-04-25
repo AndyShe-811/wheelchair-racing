@@ -3,157 +3,274 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>殘奧競速輪椅：橢圓賽道與翻車模擬</title>
+    <title>殘奧競速輪椅：多人自訂賽道模擬器</title>
     <style>
-        body { font-family: sans-serif; background: #121212; color: white; display: flex; flex-direction: column; align-items: center; padding: 20px; }
-        .panel { background: #1e1e1e; padding: 20px; border-radius: 10px; width: 100%; max-width: 800px; margin-bottom: 20px; }
-        label { display: block; margin: 10px 0 5px; }
-        input[type="range"] { width: 100%; }
-        button { background: #00ff88; border: none; padding: 10px 20px; font-size: 16px; font-weight: bold; border-radius: 5px; cursor: pointer; margin-top: 10px; width: 100%;}
-        canvas { background: #2a2a2a; border-radius: 10px; box-shadow: 0 0 10px rgba(0,0,0,0.5); }
-        #log { color: #ff4444; font-weight: bold; text-align: center; margin-top: 10px; height: 24px;}
+        :root { --bg: #121212; --panel: #1e1e1e; --text: #eee; --accent: #00ff88; }
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: var(--bg); color: var(--text); margin: 0; padding: 20px; display: flex; flex-wrap: wrap; gap: 20px; justify-content: center; }
+        h1, h2, h3 { margin-top: 0; color: var(--accent); }
+        .panel { background: var(--panel); padding: 20px; border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.5); box-sizing: border-box; }
+        .sidebar { flex: 1; min-width: 300px; max-width: 400px; display: flex; flex-direction: column; gap: 20px; }
+        .main-view { flex: 2; min-width: 600px; display: flex; flex-direction: column; align-items: center; }
+        
+        /* 表單與按鈕樣式 */
+        .control-group { margin-bottom: 15px; }
+        label { display: flex; justify-content: space-between; font-size: 14px; margin-bottom: 5px; font-weight: bold; }
+        input[type="range"] { width: 100%; cursor: pointer; }
+        input[type="text"], input[type="color"] { width: 100%; padding: 8px; border-radius: 4px; border: 1px solid #555; background: #333; color: white; box-sizing: border-box; margin-bottom: 10px; }
+        button { width: 100%; padding: 10px; background: #444; color: white; border: none; border-radius: 6px; font-size: 16px; cursor: pointer; transition: 0.2s; margin-top: 5px;}
+        button:hover { background: #555; }
+        .btn-primary { background: var(--accent); color: black; font-weight: bold; font-size: 18px; padding: 15px; }
+        .btn-primary:hover { background: #00cc6a; }
+        
+        /* 畫布與列表清單 */
+        canvas { background: #2a2a2a; border-radius: 12px; box-shadow: 0 0 20px rgba(0,0,0,0.5); width: 100%; max-width: 800px; }
+        .racer-list { list-style: none; padding: 0; margin: 0; max-height: 200px; overflow-y: auto; }
+        .racer-item { display: flex; justify-content: space-between; align-items: center; background: #333; padding: 10px; border-radius: 6px; margin-bottom: 8px; font-size: 14px;}
+        .color-dot { width: 15px; height: 15px; border-radius: 50%; display: inline-block; margin-right: 10px; vertical-align: middle; }
     </style>
 </head>
 <body>
 
-    <div class="panel">
-        <h2>🛠️ 科技車庫與物理設定</h2>
-        <label>後輪傾角 (Camber): <span id="cam-val">10</span>° (影響轉彎穩定度與直線摩擦力)</label>
-        <input type="range" id="camber" min="0" max="20" value="10">
-        
-        <label>重心高度 (CG Height): <span id="cg-val">5</span> (高重心推力佳，但過彎易翻車)</label>
-        <input type="range" id="cg" min="1" max="10" value="5">
-        
-        <button id="start">開始模擬比賽</button>
-        <div id="log"></div>
+    <div class="sidebar">
+        <div class="panel">
+            <h2>🗺️ 賽道編輯器</h2>
+            <div class="control-group">
+                <label>直線長度 (X軸半徑): <span id="val-rx">300</span></label>
+                <input type="range" id="map-rx" min="150" max="350" value="300">
+            </div>
+            <div class="control-group">
+                <label>彎道寬度 (Y軸半徑): <span id="val-ry">120</span></label>
+                <input type="range" id="map-ry" min="50" max="180" value="120">
+                <small style="color:#aaa;">*彎道越窄(數字越小)，離心力越大，越容易翻車！</small>
+            </div>
+        </div>
+
+        <div class="panel">
+            <h2>🛠️ 新增參賽選手</h2>
+            <input type="text" id="r-name" placeholder="選手名稱 (例: 選手A)" value="選手A">
+            
+            <div class="control-group">
+                <label>後輪傾角 (0-20°): <span id="val-cam">10</span></label>
+                <input type="range" id="r-cam" min="0" max="20" value="10">
+            </div>
+            <div class="control-group">
+                <label>重心高度 (1-10): <span id="val-cg">5</span></label>
+                <input type="range" id="r-cg" min="1" max="10" value="5">
+            </div>
+            
+            <label>代表顏色:</label>
+            <input type="color" id="r-color" value="#00ff88">
+            <button id="add-racer">➕ 加入比賽陣容</button>
+        </div>
+
+        <div class="panel">
+            <h3>📋 參賽名單 (<span id="racer-count">0</span>)</h3>
+            <ul class="racer-list" id="racer-list">
+                </ul>
+            <button id="clear-racers" style="background:#ff4444; margin-top:10px;">🗑️ 清空名單</button>
+        </div>
     </div>
 
-    <canvas id="track" width="800" height="400"></canvas>
+    <div class="main-view">
+        <canvas id="track" width="800" height="400"></canvas>
+        <br>
+        <button id="start-race" class="btn-primary">🏁 開始模擬比賽</button>
+        <h3 id="status-log" style="margin-top: 15px; color: var(--accent);">準備就緒...</h3>
+    </div>
 
 <script>
+    // 取得 DOM 元素
     const canvas = document.getElementById('track');
     const ctx = canvas.getContext('2d');
-    const log = document.getElementById('log');
-    
-    // UI 更新
-    document.getElementById('camber').oninput = (e) => document.getElementById('cam-val').innerText = e.target.value;
-    document.getElementById('cg').oninput = (e) => document.getElementById('cg-val').innerText = e.target.value;
+    const mapRxInput = document.getElementById('map-rx');
+    const mapRyInput = document.getElementById('map-ry');
+    const statusLog = document.getElementById('status-log');
+    const racerListEl = document.getElementById('racer-list');
 
-    // 賽道幾何設定 (橢圓形)
-    const trackCenter = { x: 400, y: 200 };
-    const rx = 300; // 橢圓 X 軸半徑 (直線段感受)
-    const ry = 120; // 橢圓 Y 軸半徑 (彎道段感受)
+    // UI 數值連動
+    document.getElementById('map-rx').oninput = (e) => { document.getElementById('val-rx').innerText = e.target.value; drawTrack(); }
+    document.getElementById('map-ry').oninput = (e) => { document.getElementById('val-ry').innerText = e.target.value; drawTrack(); }
+    document.getElementById('r-cam').oninput = (e) => document.getElementById('val-cam').innerText = e.target.value;
+    document.getElementById('r-cg').oninput = (e) => document.getElementById('val-cg').innerText = e.target.value;
 
-    let progress = 0; // 跑道進度 (角度 0 到 Math.PI * 2)
+    // 系統狀態變數
+    let racers = [];
+    let crashMarks = []; // 紀錄翻車座標：{x, y, color, name}
     let isRacing = false;
-    let crashed = false;
+    let animationId;
 
-    // 畫出賽道
+    // --- 繪圖系統 ---
+
+    // 畫賽道
     function drawTrack() {
         ctx.clearRect(0, 0, canvas.width, canvas.height);
+        const rx = parseInt(mapRxInput.value);
+        const ry = parseInt(mapRyInput.value);
+        const cx = canvas.width / 2;
+        const cy = canvas.height / 2;
+
         ctx.beginPath();
-        ctx.ellipse(trackCenter.x, trackCenter.y, rx, ry, 0, 0, Math.PI * 2);
+        ctx.ellipse(cx, cy, rx, ry, 0, 0, Math.PI * 2);
         ctx.lineWidth = 40;
         ctx.strokeStyle = '#444';
         ctx.stroke();
-        
-        // 起跑線
+
+        // 終點線
         ctx.beginPath();
-        ctx.moveTo(trackCenter.x + rx - 20, trackCenter.y);
-        ctx.lineTo(trackCenter.x + rx + 20, trackCenter.y);
+        ctx.moveTo(cx + rx - 20, cy);
+        ctx.lineTo(cx + rx + 20, cy);
         ctx.lineWidth = 4;
         ctx.strokeStyle = '#fff';
         ctx.stroke();
     }
 
-    // 畫出競速輪椅 (俯視圖)
-    function drawWheelchair(x, y, angle, color, isCrashed) {
+    // 畫選手
+    function drawWheelchair(x, y, angle, color) {
         ctx.save();
         ctx.translate(x, y);
         ctx.rotate(angle);
         
-        if (isCrashed) {
-            ctx.fillText("💥翻車!", -15, -20);
-            ctx.rotate(Math.PI / 2); // 翻車視覺效果
-        }
-
         ctx.fillStyle = color;
-        // 車架 (長條形)
-        ctx.fillRect(-20, -4, 40, 8);
-        // 前輪
-        ctx.beginPath(); ctx.arc(20, 0, 5, 0, Math.PI*2); ctx.fill();
+        ctx.fillRect(-15, -4, 30, 8); // 車架
+        ctx.beginPath(); ctx.arc(15, 0, 4, 0, Math.PI*2); ctx.fill(); // 前輪
         
-        // 兩個大後輪 (根據傾角可以用寬度來視覺化)
         ctx.fillStyle = '#fff';
-        ctx.fillRect(-15, -15, 20, 4); // 左後輪
-        ctx.fillRect(-15, 11, 20, 4);  // 右後輪
-        
+        ctx.fillRect(-10, -12, 16, 4); // 左後輪
+        ctx.fillRect(-10, 8, 16, 4);   // 右後輪
         ctx.restore();
     }
 
-    function startRace() {
-        if (isRacing) return;
+    // 畫翻車地點 (遺留物)
+    function drawCrashes() {
+        crashMarks.forEach(mark => {
+            ctx.font = "20px sans-serif";
+            ctx.textAlign = "center";
+            ctx.fillText("💥", mark.x, mark.y);
+            ctx.font = "12px sans-serif";
+            ctx.fillStyle = mark.color;
+            ctx.fillText(mark.name, mark.x, mark.y + 15);
+        });
+    }
+
+    // --- 選手管理邏輯 ---
+
+    document.getElementById('add-racer').addEventListener('click', () => {
+        const name = document.getElementById('r-name').value || `選手 ${racers.length + 1}`;
+        const camber = parseFloat(document.getElementById('r-cam').value);
+        const cg = parseFloat(document.getElementById('r-cg').value);
+        const color = document.getElementById('r-color').value;
+
+        racers.push({ name, camber, cg, color, progress: 0, crashed: false });
+        updateRacerList();
+    });
+
+    document.getElementById('clear-racers').addEventListener('click', () => {
+        racers = []; updateRacerList(); drawTrack();
+    });
+
+    function updateRacerList() {
+        document.getElementById('racer-count').innerText = racers.length;
+        racerListEl.innerHTML = '';
+        racers.forEach(r => {
+            racerListEl.innerHTML += `
+                <li class="racer-item">
+                    <span><span class="color-dot" style="background:${r.color};"></span>${r.name}</span>
+                    <span>傾角:${r.camber}° | 重心:${r.cg}</span>
+                </li>`;
+        });
+    }
+
+    // --- 核心物理與賽車引擎 ---
+
+    document.getElementById('start-race').addEventListener('click', () => {
+        if (isRacing || racers.length === 0) {
+            if(racers.length === 0) alert("請先在左側新增選手！");
+            return;
+        }
+        
         isRacing = true;
-        crashed = false;
-        progress = 0;
-        log.innerText = "";
+        crashMarks = []; // 清空之前的翻車紀錄
+        racers.forEach(r => { r.progress = 0; r.crashed = false; }); // 初始化大家的位置
+        statusLog.style.color = "white";
+        statusLog.innerText = "比賽進行中...";
         
-        const camber = parseFloat(document.getElementById('camber').value);
-        const cg = parseFloat(document.getElementById('cg').value);
-        
+        const rx = parseInt(mapRxInput.value);
+        const ry = parseInt(mapRyInput.value);
+        const cx = canvas.width / 2;
+        const cy = canvas.height / 2;
+
         function animate() {
             if (!isRacing) return;
             drawTrack();
-            
-            // 計算當前位置 (橢圓參數式)
-            const x = trackCenter.x + rx * Math.cos(progress);
-            const y = trackCenter.y + ry * Math.sin(progress);
-            
-            // 計算切線角度讓輪椅轉向
-            const dx = -rx * Math.sin(progress);
-            const dy = ry * Math.cos(progress);
-            const angle = Math.atan2(dy, dx);
+            drawCrashes(); // 畫出已經翻車的標記
 
-            // 判斷是否在彎道 (利用 Y 座標的變化率來概算，接近左右兩端時為彎道)
-            const inCurve = Math.abs(Math.cos(progress)) > 0.7; 
+            let allFinishedOrCrashed = true;
+            let currentLeader = null;
 
-            // 物理與速度邏輯
-            let speed = 0;
-            if (inCurve) {
-                // 彎道速度公式與翻車判定
-                speed = 0.015 + (camber * 0.0005) - (cg * 0.0002);
-                
-                // 翻車穩定度門檻：傾角太小且重心太高，承受不住離心力
-                const stability = camber - cg; 
-                if (stability < -2) {
-                    crashed = true;
-                    isRacing = false;
-                    log.innerText = "❌ 發生意外！重心過高且傾角不足，選手在彎道翻車了！";
-                }
-            } else {
-                // 直線速度公式
-                speed = 0.015 - (camber * 0.0003) + (cg * 0.0005);
-            }
+            racers.forEach(p => {
+                if (p.crashed) return; // 翻車就不更新進度
+                if (p.progress >= Math.PI * 2) return; // 完賽也不更新
 
-            drawWheelchair(x, y, angle, '#00ff88', crashed);
+                allFinishedOrCrashed = false; // 還有人在跑
 
-            if (!crashed) {
-                progress += speed;
-                if (progress >= Math.PI * 2) {
-                    isRacing = false;
-                    log.style.color = '#00ff88';
-                    log.innerText = "🏆 順利完賽！";
-                    progress = 0;
+                // 計算物理座標
+                const x = cx + rx * Math.cos(p.progress);
+                const y = cy + ry * Math.sin(p.progress);
+                const angle = Math.atan2(ry * Math.cos(p.progress), -rx * Math.sin(p.progress));
+
+                // 判斷是否在彎道 (跑道左右兩端)
+                const inCurve = Math.abs(Math.cos(p.progress)) > 0.6; 
+
+                let speed = 0;
+                if (inCurve) {
+                    speed = 0.015 + (p.camber * 0.0005) - (p.cg * 0.0002);
+                    
+                    // 動態離心力判斷：彎道越小(ry越小)，需要的穩定度越高
+                    const curveDifficulty = 100 / ry; // 基準難度係數
+                    const stability = (p.camber - p.cg) - (curveDifficulty * 8); 
+                    
+                    if (stability < -10) { // 翻車門檻
+                        p.crashed = true;
+                        crashMarks.push({ x, y, color: p.color, name: p.name });
+                        return; // 中斷這回合運算
+                    }
                 } else {
-                    requestAnimationFrame(animate);
+                    speed = 0.015 - (p.camber * 0.0003) + (p.cg * 0.0005);
                 }
+
+                p.progress += speed;
+                drawWheelchair(x, y, angle, p.color);
+                
+                // 簡易冠軍判定 (第一個跑完一圈的人)
+                if (p.progress >= Math.PI * 2 && !currentLeader) {
+                    currentLeader = p;
+                }
+            });
+
+            if (allFinishedOrCrashed) {
+                isRacing = false;
+                if (currentLeader) {
+                    statusLog.style.color = currentLeader.color;
+                    statusLog.innerText = `🏆 比賽結束！冠軍是：${currentLeader.name}`;
+                } else {
+                    statusLog.style.color = "#ff4444";
+                    statusLog.innerText = "💥 全軍覆沒！所有人都翻車了，請調整賽道或參數！";
+                }
+                return;
             }
+
+            animationId = requestAnimationFrame(animate);
         }
         animate();
-    }
+    });
 
-    document.getElementById('start').addEventListener('click', startRace);
-    drawTrack(); // 初始畫面
+    // 初始繪圖
+    drawTrack();
+    // 預設加兩個選手方便測試
+    racers.push({ name: "穩健型選手", camber: 15, cg: 3, color: "#00ff88", progress: 0, crashed: false });
+    racers.push({ name: "極速型(易翻車)", camber: 5, cg: 9, color: "#ff4444", progress: 0, crashed: false });
+    updateRacerList();
+
 </script>
 </body>
 </html>
