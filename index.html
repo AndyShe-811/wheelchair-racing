@@ -18,6 +18,7 @@
         input[type="text"], input[type="color"] { width: 100%; padding: 8px; border-radius: 4px; border: 1px solid #555; background: #333; color: white; box-sizing: border-box; margin-bottom: 10px; }
         button { width: 100%; padding: 10px; background: #444; color: white; border: none; border-radius: 6px; font-size: 16px; cursor: pointer; transition: 0.2s; margin-top: 5px; font-weight: bold;}
         button:hover { background: #555; }
+        button:disabled { background: #333; color: #777; cursor: not-allowed; }
         .btn-primary { background: var(--accent); color: black; font-size: 18px; padding: 15px; }
         .btn-primary:hover { background: #00cc6a; }
         
@@ -34,7 +35,7 @@
     <div class="sidebar">
         <div class="panel">
             <h2>🗺️ 手繪賽道工作室</h2>
-            <p style="font-size: 14px; color: #aaa;">點擊下方按鈕後，在右側畫布上按住滑鼠拖曳，畫出你的專屬賽道！放開滑鼠會自動閉合起終點。</p>
+            <p style="font-size: 14px; color: #aaa;">點擊下方按鈕後，在右側畫布上按住滑鼠拖曳，畫出你的專屬賽道！注意：起點與終點必須連在一起。</p>
             <button id="btn-draw" style="background: #3498db;">✍️ 開始手繪新賽道</button>
             <button id="btn-default" style="background: #555;">🔄 恢復預設橢圓形</button>
         </div>
@@ -73,6 +74,7 @@
     const ctx = canvas.getContext('2d');
     const statusLog = document.getElementById('status-log');
     const racerListEl = document.getElementById('racer-list');
+    const startRaceBtn = document.getElementById('start-race');
 
     document.getElementById('r-cam').oninput = (e) => document.getElementById('val-cam').innerText = e.target.value;
     document.getElementById('r-cg').oninput = (e) => document.getElementById('val-cg').innerText = e.target.value;
@@ -80,19 +82,16 @@
     let racers = [];
     let crashMarks = []; 
     let isRacing = false;
-    let trackPoints = []; // 儲存賽道所有座標點
+    let trackPoints = []; 
     let isDrawingMode = false;
     let isMouseDown = false;
 
     // --- 繪圖工具箱邏輯 ---
-    
-    // 生成預設橢圓賽道
     function createDefaultTrack() {
         trackPoints = [];
         const cx = 400, cy = 200, rx = 300, ry = 120;
-        // 採樣 200 個點來組成橢圓
         for (let i = 0; i < 200; i++) {
-            const angle = (i / 200) * Math.PI * 2 + (Math.PI / 2); // 從正下方起跑
+            const angle = (i / 200) * Math.PI * 2 + (Math.PI / 2); 
             trackPoints.push({
                 x: cx + rx * Math.cos(angle),
                 y: cy + ry * Math.sin(angle)
@@ -100,56 +99,50 @@
         }
         processTrackPhysics();
         drawTrack();
+        startRaceBtn.disabled = false;
     }
 
-    // 計算賽道每個點的角度與彎道銳利度 (核心物理升級)
     function processTrackPhysics() {
-        if (trackPoints.length < 10) return; // 點太少不構成賽道
+        if (trackPoints.length < 10) return; 
 
         for (let i = 0; i < trackPoints.length; i++) {
             const pCurrent = trackPoints[i];
-            const pNext = trackPoints[(i + 1) % trackPoints.length]; // 下一個點
-            const pPrev = trackPoints[(i - 1 + trackPoints.length) % trackPoints.length]; // 上一個點
+            const pNext = trackPoints[(i + 1) % trackPoints.length]; 
+            const pPrev = trackPoints[(i - 1 + trackPoints.length) % trackPoints.length]; 
 
-            // 計算前進方向的角度 (Tangent Angle)
             pCurrent.angle = Math.atan2(pNext.y - pCurrent.y, pNext.x - pCurrent.x);
-
-            // 計算彎曲程度 (Curvature)：前後角度差的絕對值
+            
             let angleDiff = Math.abs(Math.atan2(pNext.y - pCurrent.y, pNext.x - pCurrent.x) - 
                                      Math.atan2(pCurrent.y - pPrev.y, pCurrent.x - pPrev.x));
             if (angleDiff > Math.PI) angleDiff = (Math.PI * 2) - angleDiff;
             
-            pCurrent.sharpness = angleDiff; // 這個數值越大，代表彎越急
+            pCurrent.sharpness = angleDiff; 
         }
     }
 
-    // 畫出目前的賽道
     function drawTrack() {
         ctx.clearRect(0, 0, canvas.width, canvas.height);
-        if (trackPoints.length === 0) {
-            ctx.fillStyle = '#555'; ctx.font = "24px sans-serif"; ctx.textAlign = "center";
-            ctx.fillText("點擊左側「✍️ 開始手繪新賽道」來畫圖", canvas.width/2, canvas.height/2);
-            return;
-        }
+        if (trackPoints.length === 0) return;
 
         ctx.beginPath();
         ctx.moveTo(trackPoints[0].x, trackPoints[0].y);
         for (let i = 1; i < trackPoints.length; i++) {
             ctx.lineTo(trackPoints[i].x, trackPoints[i].y);
         }
-        ctx.closePath(); // 閉合迴圈
         ctx.lineWidth = 40;
         ctx.strokeStyle = '#444';
         ctx.lineJoin = 'round';
         ctx.lineCap = 'round';
         ctx.stroke();
 
-        // 畫起跑線 (陣列的第 0 個點)
-        const p0 = trackPoints[0];
+        // 畫起點指示
         ctx.beginPath();
-        ctx.arc(p0.x, p0.y, 5, 0, Math.PI*2);
-        ctx.fillStyle = 'white';
+        ctx.arc(trackPoints[0].x, trackPoints[0].y, 6, 0, Math.PI*2);
+        ctx.fillStyle = '#00ff88';
         ctx.fill();
+        ctx.lineWidth = 2;
+        ctx.strokeStyle = '#000';
+        ctx.stroke();
     }
 
     // --- 滑鼠手繪事件 ---
@@ -160,12 +153,14 @@
         canvas.classList.add('drawing-mode');
         statusLog.style.color = "#3498db";
         statusLog.innerText = "✍️ 繪圖模式：請在上方黑色區域按住滑鼠畫出一圈賽道";
-        drawTrack();
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        startRaceBtn.disabled = true; // 畫完之前禁止比賽
     });
 
     document.getElementById('btn-default').addEventListener('click', () => {
         isDrawingMode = false;
         canvas.classList.remove('drawing-mode');
+        statusLog.style.color = "var(--accent)";
         statusLog.innerText = "已載入標準田徑賽道";
         createDefaultTrack();
     });
@@ -173,22 +168,21 @@
     canvas.addEventListener('mousedown', (e) => {
         if (!isDrawingMode) return;
         isMouseDown = true;
-        trackPoints = []; // 開始新的一筆
+        trackPoints = []; 
         addPoint(e);
     });
 
     canvas.addEventListener('mousemove', (e) => {
         if (!isDrawingMode || !isMouseDown) return;
-        // 為了避免滑鼠採樣點太密，限制距離
         const lastP = trackPoints[trackPoints.length - 1];
         const rect = canvas.getBoundingClientRect();
         const mx = e.clientX - rect.left;
         const my = e.clientY - rect.top;
         const dist = Math.hypot(mx - lastP.x, my - lastP.y);
         
-        if (dist > 15) { // 每移動 15px 紀錄一個點
+        if (dist > 15) { 
             addPoint(e);
-            drawTrack(); // 即時預覽線條
+            drawTrack(); 
         }
     });
 
@@ -206,16 +200,48 @@
         isDrawingMode = false;
         canvas.classList.remove('drawing-mode');
         
-        if (trackPoints.length < 10) {
-            statusLog.innerText = "賽道太短了！請重新畫一次完整的圈。";
-            createDefaultTrack();
+        if (trackPoints.length < 15) {
+            statusLog.style.color = "#e74c3c";
+            statusLog.innerText = "❌ 賽道太短了！請重新畫一次完整的圈。";
+            trackPoints = [];
             return;
         }
 
-        processTrackPhysics(); // 計算轉彎銳利度
+        // --- 核心防呆：閉合驗證 ---
+        const firstPoint = trackPoints[0];
+        const lastPoint = trackPoints[trackPoints.length - 1];
+        
+        // 畢氏定理計算首尾距離
+        const distance = Math.hypot(lastPoint.x - firstPoint.x, lastPoint.y - firstPoint.y);
+
+        if (distance > 60) {
+            // 距離超過 60px，判定未閉合
+            statusLog.style.color = "#e74c3c";
+            statusLog.innerText = "⚠️ 賽道未閉合！起點與終點距離太遠，請重新繪製。";
+            
+            // 畫出紅色警告虛線連接首尾，提示玩家哪裡斷掉
+            ctx.beginPath();
+            ctx.moveTo(lastPoint.x, lastPoint.y);
+            ctx.lineTo(firstPoint.x, firstPoint.y);
+            ctx.strokeStyle = "rgba(231, 76, 60, 0.8)";
+            ctx.lineWidth = 5;
+            ctx.setLineDash([10, 10]);
+            ctx.stroke();
+            ctx.setLineDash([]);
+            
+            trackPoints = []; // 銷毀無效賽道
+            startRaceBtn.disabled = true;
+            return;
+        } else {
+            // 距離在 60px 內，啟動「自動吸附」將最後一點接到起點
+            trackPoints.push({ x: firstPoint.x, y: firstPoint.y });
+            startRaceBtn.disabled = false;
+            statusLog.style.color = "var(--accent)";
+            statusLog.innerText = "✅ 賽道閉合成功！可以開始比賽了。";
+        }
+
+        processTrackPhysics(); 
         drawTrack();
-        statusLog.style.color = "var(--accent)";
-        statusLog.innerText = "✅ 賽道生成完畢！可以開始比賽了。";
     }
 
     // --- 賽車引擎與物理邏輯 ---
@@ -270,7 +296,7 @@
         
         isRacing = true;
         crashMarks = []; 
-        racers.forEach(r => { r.progress = 0; r.crashed = false; }); // progress 現在代表走過幾個座標點
+        racers.forEach(r => { r.progress = 0; r.crashed = false; }); 
         statusLog.style.color = "white";
         statusLog.innerText = "比賽進行中...";
 
@@ -291,32 +317,26 @@
                 const pointIndex = Math.floor(p.progress);
                 const currentPoint = trackPoints[pointIndex];
                 
-                // 動態物理判定：讀取這個座標點的「彎道銳利度 (sharpness)」
                 let speedStep = 0;
                 
                 if (currentPoint.sharpness > 0.05) { 
-                    // 這是彎道：銳利度越高，離心力越可怕
                     speedStep = 1.5 + (p.camber * 0.05) - (p.cg * 0.02);
-                    
-                    const curveDifficulty = currentPoint.sharpness * 100; // 將角度差放大為難度系數
+                    const curveDifficulty = currentPoint.sharpness * 100; 
                     const stability = (p.camber - p.cg) - (curveDifficulty * 1.5); 
                     
-                    if (stability < -5) { // 翻車門檻
+                    if (stability < -5) { 
                         p.crashed = true;
                         crashMarks.push({ x: currentPoint.x, y: currentPoint.y, color: p.color, name: p.name });
                         return; 
                     }
                 } else {
-                    // 這是直道
                     speedStep = 1.5 - (p.camber * 0.03) + (p.cg * 0.05);
                 }
 
                 p.progress += speedStep;
-                
                 if (p.progress >= finishIndex && !currentLeader) currentLeader = p;
             });
 
-            // 繪圖
             racers.forEach(p => {
                 if (p.crashed) return; 
                 const drawIdx = Math.min(Math.floor(p.progress), finishIndex); 
