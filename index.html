@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>殘奧競速輪椅：多人自訂賽道模擬器</title>
+    <title>殘奧競速輪椅：手繪賽道物理模擬器</title>
     <style>
         :root { --bg: #121212; --panel: #1e1e1e; --text: #eee; --accent: #00ff88; }
         body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: var(--bg); color: var(--text); margin: 0; padding: 20px; display: flex; flex-wrap: wrap; gap: 20px; justify-content: center; }
@@ -16,37 +16,27 @@
         label { display: flex; justify-content: space-between; font-size: 14px; margin-bottom: 5px; font-weight: bold; }
         input[type="range"] { width: 100%; cursor: pointer; }
         input[type="text"], input[type="color"] { width: 100%; padding: 8px; border-radius: 4px; border: 1px solid #555; background: #333; color: white; box-sizing: border-box; margin-bottom: 10px; }
-        button { width: 100%; padding: 10px; background: #444; color: white; border: none; border-radius: 6px; font-size: 16px; cursor: pointer; transition: 0.2s; margin-top: 5px;}
+        button { width: 100%; padding: 10px; background: #444; color: white; border: none; border-radius: 6px; font-size: 16px; cursor: pointer; transition: 0.2s; margin-top: 5px; font-weight: bold;}
         button:hover { background: #555; }
-        .btn-primary { background: var(--accent); color: black; font-weight: bold; font-size: 18px; padding: 15px; }
+        .btn-primary { background: var(--accent); color: black; font-size: 18px; padding: 15px; }
         .btn-primary:hover { background: #00cc6a; }
         
-        canvas { background: #2a2a2a; border-radius: 12px; box-shadow: 0 0 20px rgba(0,0,0,0.5); width: 100%; max-width: 800px; }
+        canvas { background: #2a2a2a; border-radius: 12px; box-shadow: 0 0 20px rgba(0,0,0,0.5); width: 100%; max-width: 800px; cursor: crosshair; }
+        .drawing-mode { border: 3px dashed var(--accent); }
+        
         .racer-list { list-style: none; padding: 0; margin: 0; max-height: 250px; overflow-y: auto; }
         .racer-item { display: flex; justify-content: space-between; align-items: center; background: #333; padding: 10px; border-radius: 6px; margin-bottom: 8px; font-size: 14px;}
         .color-dot { width: 15px; height: 15px; border-radius: 50%; display: inline-block; margin-right: 10px; vertical-align: middle; }
-        
-        .action-btns { display: flex; gap: 5px; }
-        .btn-small { padding: 5px 8px; font-size: 12px; width: auto; margin-top: 0; }
-        .btn-edit { background: #f39c12; color: white; }
-        .btn-edit:hover { background: #e67e22; }
-        .btn-del { background: #e74c3c; color: white; }
-        .btn-del:hover { background: #c0392b; }
     </style>
 </head>
 <body>
 
     <div class="sidebar">
         <div class="panel">
-            <h2>🗺️ 賽道編輯器</h2>
-            <div class="control-group">
-                <label>直線長度 (X軸半徑): <span id="val-rx">300</span></label>
-                <input type="range" id="map-rx" min="150" max="350" value="300">
-            </div>
-            <div class="control-group">
-                <label>彎道寬度 (Y軸半徑): <span id="val-ry">120</span></label>
-                <input type="range" id="map-ry" min="50" max="180" value="120">
-            </div>
+            <h2>🗺️ 手繪賽道工作室</h2>
+            <p style="font-size: 14px; color: #aaa;">點擊下方按鈕後，在右側畫布上按住滑鼠拖曳，畫出你的專屬賽道！放開滑鼠會自動閉合起終點。</p>
+            <button id="btn-draw" style="background: #3498db;">✍️ 開始手繪新賽道</button>
+            <button id="btn-default" style="background: #555;">🔄 恢復預設橢圓形</button>
         </div>
 
         <div class="panel">
@@ -63,72 +53,173 @@
             <label>代表顏色:</label>
             <input type="color" id="r-color" value="#00ff88">
             <button id="add-racer">➕ 加入比賽陣容</button>
-            <button id="cancel-edit" style="display:none; background:#555;">取消編輯</button>
         </div>
 
         <div class="panel">
             <h3>📋 參賽名單 (<span id="racer-count">0</span>)</h3>
             <ul class="racer-list" id="racer-list"></ul>
-            <button id="clear-racers" style="background:#e74c3c; margin-top:10px;">🗑️ 清空所有名單</button>
         </div>
     </div>
 
     <div class="main-view">
         <canvas id="track" width="800" height="400"></canvas>
         <br>
-        <button id="start-race" class="btn-primary">🏁 開始模擬比賽</button>
-        <h3 id="status-log" style="margin-top: 15px; color: var(--accent);">準備就緒...</h3>
+        <button id="start-race" class="btn-primary">🏁 在這條賽道上開始比賽</button>
+        <h3 id="status-log" style="margin-top: 15px; color: var(--accent);">請畫出賽道或直接開始比賽！</h3>
     </div>
 
 <script>
     const canvas = document.getElementById('track');
     const ctx = canvas.getContext('2d');
-    const mapRxInput = document.getElementById('map-rx');
-    const mapRyInput = document.getElementById('map-ry');
     const statusLog = document.getElementById('status-log');
     const racerListEl = document.getElementById('racer-list');
-    const addBtn = document.getElementById('add-racer');
-    const cancelEditBtn = document.getElementById('cancel-edit');
-    const garageTitle = document.getElementById('garage-title');
 
-    // 起跑線與終點線的物理常數 (改為正下方的直線道)
-    const START_LINE = Math.PI / 2; 
-    const FINISH_LINE = START_LINE + (Math.PI * 2);
-
-    document.getElementById('map-rx').oninput = (e) => { document.getElementById('val-rx').innerText = e.target.value; drawTrack(); }
-    document.getElementById('map-ry').oninput = (e) => { document.getElementById('val-ry').innerText = e.target.value; drawTrack(); }
     document.getElementById('r-cam').oninput = (e) => document.getElementById('val-cam').innerText = e.target.value;
     document.getElementById('r-cg').oninput = (e) => document.getElementById('val-cg').innerText = e.target.value;
 
     let racers = [];
     let crashMarks = []; 
     let isRacing = false;
-    let editingIndex = -1; 
+    let trackPoints = []; // 儲存賽道所有座標點
+    let isDrawingMode = false;
+    let isMouseDown = false;
 
-    // --- 繪圖系統 ---
-    function drawTrack() {
-        ctx.clearRect(0, 0, canvas.width, canvas.height);
-        const rx = parseInt(mapRxInput.value);
-        const ry = parseInt(mapRyInput.value);
-        const cx = canvas.width / 2;
-        const cy = canvas.height / 2;
-
-        // 跑道主體
-        ctx.beginPath();
-        ctx.ellipse(cx, cy, rx, ry, 0, 0, Math.PI * 2);
-        ctx.lineWidth = 40;
-        ctx.strokeStyle = '#444';
-        ctx.stroke();
-
-        // 終點線 (設置在正下方直線道)
-        ctx.beginPath();
-        ctx.moveTo(cx, cy + ry - 20);
-        ctx.lineTo(cx, cy + ry + 20);
-        ctx.lineWidth = 4;
-        ctx.strokeStyle = '#fff';
-        ctx.stroke();
+    // --- 繪圖工具箱邏輯 ---
+    
+    // 生成預設橢圓賽道
+    function createDefaultTrack() {
+        trackPoints = [];
+        const cx = 400, cy = 200, rx = 300, ry = 120;
+        // 採樣 200 個點來組成橢圓
+        for (let i = 0; i < 200; i++) {
+            const angle = (i / 200) * Math.PI * 2 + (Math.PI / 2); // 從正下方起跑
+            trackPoints.push({
+                x: cx + rx * Math.cos(angle),
+                y: cy + ry * Math.sin(angle)
+            });
+        }
+        processTrackPhysics();
+        drawTrack();
     }
 
+    // 計算賽道每個點的角度與彎道銳利度 (核心物理升級)
+    function processTrackPhysics() {
+        if (trackPoints.length < 10) return; // 點太少不構成賽道
+
+        for (let i = 0; i < trackPoints.length; i++) {
+            const pCurrent = trackPoints[i];
+            const pNext = trackPoints[(i + 1) % trackPoints.length]; // 下一個點
+            const pPrev = trackPoints[(i - 1 + trackPoints.length) % trackPoints.length]; // 上一個點
+
+            // 計算前進方向的角度 (Tangent Angle)
+            pCurrent.angle = Math.atan2(pNext.y - pCurrent.y, pNext.x - pCurrent.x);
+
+            // 計算彎曲程度 (Curvature)：前後角度差的絕對值
+            let angleDiff = Math.abs(Math.atan2(pNext.y - pCurrent.y, pNext.x - pCurrent.x) - 
+                                     Math.atan2(pCurrent.y - pPrev.y, pCurrent.x - pPrev.x));
+            if (angleDiff > Math.PI) angleDiff = (Math.PI * 2) - angleDiff;
+            
+            pCurrent.sharpness = angleDiff; // 這個數值越大，代表彎越急
+        }
+    }
+
+    // 畫出目前的賽道
+    function drawTrack() {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        if (trackPoints.length === 0) {
+            ctx.fillStyle = '#555'; ctx.font = "24px sans-serif"; ctx.textAlign = "center";
+            ctx.fillText("點擊左側「✍️ 開始手繪新賽道」來畫圖", canvas.width/2, canvas.height/2);
+            return;
+        }
+
+        ctx.beginPath();
+        ctx.moveTo(trackPoints[0].x, trackPoints[0].y);
+        for (let i = 1; i < trackPoints.length; i++) {
+            ctx.lineTo(trackPoints[i].x, trackPoints[i].y);
+        }
+        ctx.closePath(); // 閉合迴圈
+        ctx.lineWidth = 40;
+        ctx.strokeStyle = '#444';
+        ctx.lineJoin = 'round';
+        ctx.lineCap = 'round';
+        ctx.stroke();
+
+        // 畫起跑線 (陣列的第 0 個點)
+        const p0 = trackPoints[0];
+        ctx.beginPath();
+        ctx.arc(p0.x, p0.y, 5, 0, Math.PI*2);
+        ctx.fillStyle = 'white';
+        ctx.fill();
+    }
+
+    // --- 滑鼠手繪事件 ---
+    document.getElementById('btn-draw').addEventListener('click', () => {
+        isDrawingMode = true;
+        isRacing = false;
+        trackPoints = [];
+        canvas.classList.add('drawing-mode');
+        statusLog.style.color = "#3498db";
+        statusLog.innerText = "✍️ 繪圖模式：請在上方黑色區域按住滑鼠畫出一圈賽道";
+        drawTrack();
+    });
+
+    document.getElementById('btn-default').addEventListener('click', () => {
+        isDrawingMode = false;
+        canvas.classList.remove('drawing-mode');
+        statusLog.innerText = "已載入標準田徑賽道";
+        createDefaultTrack();
+    });
+
+    canvas.addEventListener('mousedown', (e) => {
+        if (!isDrawingMode) return;
+        isMouseDown = true;
+        trackPoints = []; // 開始新的一筆
+        addPoint(e);
+    });
+
+    canvas.addEventListener('mousemove', (e) => {
+        if (!isDrawingMode || !isMouseDown) return;
+        // 為了避免滑鼠採樣點太密，限制距離
+        const lastP = trackPoints[trackPoints.length - 1];
+        const rect = canvas.getBoundingClientRect();
+        const mx = e.clientX - rect.left;
+        const my = e.clientY - rect.top;
+        const dist = Math.hypot(mx - lastP.x, my - lastP.y);
+        
+        if (dist > 15) { // 每移動 15px 紀錄一個點
+            addPoint(e);
+            drawTrack(); // 即時預覽線條
+        }
+    });
+
+    canvas.addEventListener('mouseup', finishDrawing);
+    canvas.addEventListener('mouseleave', () => { if(isMouseDown) finishDrawing(); });
+
+    function addPoint(e) {
+        const rect = canvas.getBoundingClientRect();
+        trackPoints.push({ x: e.clientX - rect.left, y: e.clientY - rect.top });
+    }
+
+    function finishDrawing() {
+        if (!isDrawingMode || !isMouseDown) return;
+        isMouseDown = false;
+        isDrawingMode = false;
+        canvas.classList.remove('drawing-mode');
+        
+        if (trackPoints.length < 10) {
+            statusLog.innerText = "賽道太短了！請重新畫一次完整的圈。";
+            createDefaultTrack();
+            return;
+        }
+
+        processTrackPhysics(); // 計算轉彎銳利度
+        drawTrack();
+        statusLog.style.color = "var(--accent)";
+        statusLog.innerText = "✅ 賽道生成完畢！可以開始比賽了。";
+    }
+
+    // --- 賽車引擎與物理邏輯 ---
+    
     function drawWheelchair(x, y, angle, color) {
         ctx.save();
         ctx.translate(x, y);
@@ -144,16 +235,11 @@
 
     function drawCrashes() {
         crashMarks.forEach(mark => {
-            ctx.font = "20px sans-serif";
-            ctx.textAlign = "center";
-            ctx.fillText("💥", mark.x, mark.y);
-            ctx.font = "12px sans-serif";
-            ctx.fillStyle = mark.color;
-            ctx.fillText(mark.name, mark.x, mark.y + 15);
+            ctx.font = "20px sans-serif"; ctx.textAlign = "center"; ctx.fillText("💥", mark.x, mark.y);
+            ctx.font = "12px sans-serif"; ctx.fillStyle = mark.color; ctx.fillText(mark.name, mark.x, mark.y + 15);
         });
     }
 
-    // --- 選手管理邏輯 ---
     function updateRacerList() {
         document.getElementById('racer-count').innerText = racers.length;
         racerListEl.innerHTML = '';
@@ -165,88 +251,31 @@
                         <span style="font-weight:bold;">${r.name}</span><br>
                         <span style="color:#aaa; font-size: 12px;">傾角: ${r.camber}° | 重心: ${r.cg}</span>
                     </div>
-                    <div class="action-btns">
-                        <button class="btn-small btn-edit" onclick="startEdit(${index})" ${isRacing ? 'disabled' : ''}>✏️</button>
-                        <button class="btn-small btn-del" onclick="deleteRacer(${index})" ${isRacing ? 'disabled' : ''}>❌</button>
-                    </div>
                 </li>`;
         });
     }
 
-    window.startEdit = function(index) {
-        if(isRacing) return;
-        editingIndex = index;
-        const r = racers[index];
-        document.getElementById('r-name').value = r.name;
-        document.getElementById('r-cam').value = r.camber;
-        document.getElementById('val-cam').innerText = r.camber;
-        document.getElementById('r-cg').value = r.cg;
-        document.getElementById('val-cg').innerText = r.cg;
-        document.getElementById('r-color').value = r.color;
-
-        garageTitle.innerText = "✏️ 編輯選手參數";
-        addBtn.innerText = "💾 儲存修改";
-        addBtn.style.background = "#f39c12"; 
-        cancelEditBtn.style.display = "block"; 
-    };
-
-    function cancelEdit() {
-        editingIndex = -1;
-        garageTitle.innerText = "🛠️ 新增參賽選手";
-        addBtn.innerText = "➕ 加入比賽陣容";
-        addBtn.style.background = "#444";
-        cancelEditBtn.style.display = "none";
-        document.getElementById('r-name').value = "";
-    }
-    cancelEditBtn.addEventListener('click', cancelEdit);
-
-    window.deleteRacer = function(index) {
-        if(isRacing) return;
-        racers.splice(index, 1);
-        if(editingIndex === index) cancelEdit(); 
-        updateRacerList();
-    };
-
-    addBtn.addEventListener('click', () => {
+    document.getElementById('add-racer').addEventListener('click', () => {
         const name = document.getElementById('r-name').value || `選手 ${racers.length + 1}`;
         const camber = parseFloat(document.getElementById('r-cam').value);
         const cg = parseFloat(document.getElementById('r-cg').value);
         const color = document.getElementById('r-color').value;
-
-        if (editingIndex === -1) {
-            racers.push({ name, camber, cg, color, progress: START_LINE, crashed: false });
-        } else {
-            racers[editingIndex] = { name, camber, cg, color, progress: START_LINE, crashed: false };
-            cancelEdit(); 
-        }
+        racers.push({ name, camber, cg, color, progress: 0, crashed: false });
         updateRacerList();
     });
 
-    document.getElementById('clear-racers').addEventListener('click', () => {
-        if(isRacing) return;
-        racers = []; cancelEdit(); updateRacerList(); drawTrack();
-    });
-
-    // --- 核心物理與賽車引擎 ---
     document.getElementById('start-race').addEventListener('click', () => {
-        if (isRacing || racers.length === 0) {
-            if(racers.length === 0) alert("請先在左側新增選手！");
-            return;
-        }
+        if (isRacing || racers.length === 0) return;
+        if (trackPoints.length === 0) { alert("請先畫賽道！"); return; }
         
         isRacing = true;
-        updateRacerList(); 
         crashMarks = []; 
-        racers.forEach(r => { r.progress = START_LINE; r.crashed = false; }); // 重置到起跑線
+        racers.forEach(r => { r.progress = 0; r.crashed = false; }); // progress 現在代表走過幾個座標點
         statusLog.style.color = "white";
         statusLog.innerText = "比賽進行中...";
-        
-        const rx = parseInt(mapRxInput.value);
-        const ry = parseInt(mapRyInput.value);
-        const cx = canvas.width / 2;
-        const cy = canvas.height / 2;
 
         let currentLeader = null;
+        const finishIndex = trackPoints.length - 1;
 
         function animate() {
             if (!isRacing) return;
@@ -255,64 +284,54 @@
 
             let allFinishedOrCrashed = true;
 
-            // 1. 物理狀態更新 (僅計算還在跑的人)
             racers.forEach(p => {
-                if (p.crashed || p.progress >= FINISH_LINE) return; 
-
+                if (p.crashed || p.progress >= finishIndex) return; 
                 allFinishedOrCrashed = false; 
 
-                // 判斷是否在彎道
-                const inCurve = Math.abs(Math.cos(p.progress)) > 0.6; 
-
-                let speed = 0;
-                if (inCurve) {
-                    speed = 0.015 + (p.camber * 0.0005) - (p.cg * 0.0002);
-                    const curveDifficulty = 100 / ry; 
-                    const stability = (p.camber - p.cg) - (curveDifficulty * 8); 
+                const pointIndex = Math.floor(p.progress);
+                const currentPoint = trackPoints[pointIndex];
+                
+                // 動態物理判定：讀取這個座標點的「彎道銳利度 (sharpness)」
+                let speedStep = 0;
+                
+                if (currentPoint.sharpness > 0.05) { 
+                    // 這是彎道：銳利度越高，離心力越可怕
+                    speedStep = 1.5 + (p.camber * 0.05) - (p.cg * 0.02);
                     
-                    if (stability < -10) { 
+                    const curveDifficulty = currentPoint.sharpness * 100; // 將角度差放大為難度系數
+                    const stability = (p.camber - p.cg) - (curveDifficulty * 1.5); 
+                    
+                    if (stability < -5) { // 翻車門檻
                         p.crashed = true;
-                        // 紀錄翻車當下的確切座標
-                        const x = cx + rx * Math.cos(p.progress);
-                        const y = cy + ry * Math.sin(p.progress);
-                        crashMarks.push({ x, y, color: p.color, name: p.name });
+                        crashMarks.push({ x: currentPoint.x, y: currentPoint.y, color: p.color, name: p.name });
                         return; 
                     }
                 } else {
-                    speed = 0.015 - (p.camber * 0.0003) + (p.cg * 0.0005);
+                    // 這是直道
+                    speedStep = 1.5 - (p.camber * 0.03) + (p.cg * 0.05);
                 }
 
-                p.progress += speed;
+                p.progress += speedStep;
                 
-                // 抵達終點判定
-                if (p.progress >= FINISH_LINE && !currentLeader) {
-                    currentLeader = p;
-                }
+                if (p.progress >= finishIndex && !currentLeader) currentLeader = p;
             });
 
-            // 2. 畫面繪製 (畫出所有沒翻車的人，包含已經過線停下的)
+            // 繪圖
             racers.forEach(p => {
                 if (p.crashed) return; 
-                
-                // 將畫圖位置鎖死在終點線，避免過線後繼續跑
-                const drawProg = Math.min(p.progress, FINISH_LINE); 
-                const x = cx + rx * Math.cos(drawProg);
-                const y = cy + ry * Math.sin(drawProg);
-                const angle = Math.atan2(ry * Math.cos(drawProg), -rx * Math.sin(drawProg));
-                
-                drawWheelchair(x, y, angle, p.color);
+                const drawIdx = Math.min(Math.floor(p.progress), finishIndex); 
+                const pt = trackPoints[drawIdx];
+                drawWheelchair(pt.x, pt.y, pt.angle, p.color);
             });
 
-            // 3. 結算
             if (allFinishedOrCrashed) {
                 isRacing = false;
-                updateRacerList(); 
                 if (currentLeader) {
                     statusLog.style.color = currentLeader.color;
                     statusLog.innerText = `🏆 比賽結束！冠軍是：${currentLeader.name}`;
                 } else {
                     statusLog.style.color = "#e74c3c";
-                    statusLog.innerText = "💥 全軍覆沒！所有人都翻車了，請調整賽道或參數！";
+                    statusLog.innerText = "💥 全軍覆沒！所有人都翻車了，你的賽道可能太極端了！";
                 }
                 return;
             }
@@ -321,10 +340,11 @@
         animate();
     });
 
-    drawTrack();
-    racers.push({ name: "穩健過彎型", camber: 15, cg: 3, color: "#00ff88", progress: START_LINE, crashed: false });
-    racers.push({ name: "直線加速型", camber: 2, cg: 8, color: "#3498db", progress: START_LINE, crashed: false });
-    racers.push({ name: "極端危險型", camber: 0, cg: 10, color: "#e74c3c", progress: START_LINE, crashed: false });
+    // 初始化
+    createDefaultTrack();
+    racers.push({ name: "穩健過彎型", camber: 15, cg: 3, color: "#00ff88", progress: 0, crashed: false });
+    racers.push({ name: "直線加速型", camber: 2, cg: 8, color: "#3498db", progress: 0, crashed: false });
+    racers.push({ name: "極端危險型", camber: 0, cg: 10, color: "#e74c3c", progress: 0, crashed: false });
     updateRacerList();
 
 </script>
