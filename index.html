@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>殘奧競速輪椅：手繪賽道與編輯系統</title>
+    <title>殘奧競速輪椅：橢圓賽道物理模擬器</title>
     <style>
         :root { --bg: #121212; --panel: #1e1e1e; --text: #eee; --accent: #00ff88; }
         body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: var(--bg); color: var(--text); margin: 0; padding: 20px; display: flex; flex-wrap: wrap; gap: 20px; justify-content: center; }
@@ -22,8 +22,7 @@
         .btn-primary { background: var(--accent); color: black; font-size: 18px; padding: 15px; }
         .btn-primary:hover { background: #00cc6a; }
         
-        canvas { background: #2a2a2a; border-radius: 12px; box-shadow: 0 0 20px rgba(0,0,0,0.5); width: 100%; max-width: 800px; cursor: crosshair; }
-        .drawing-mode { border: 3px dashed var(--accent); }
+        canvas { background: #2a2a2a; border-radius: 12px; box-shadow: 0 0 20px rgba(0,0,0,0.5); width: 100%; max-width: 800px; }
         
         .racer-list { list-style: none; padding: 0; margin: 0; max-height: 250px; overflow-y: auto; }
         .racer-item { display: flex; justify-content: space-between; align-items: center; background: #333; padding: 10px; border-radius: 6px; margin-bottom: 8px; font-size: 14px;}
@@ -41,10 +40,17 @@
 
     <div class="sidebar">
         <div class="panel">
-            <h2>🗺️ 手繪賽道工作室</h2>
-            <p style="font-size: 14px; color: #aaa;">已升級為「精準平衡模式」：高傾角直線會變慢，重心太高過急彎必翻車！</p>
-            <button id="btn-draw" style="background: #3498db;">✍️ 開始手繪新賽道</button>
-            <button id="btn-default" style="background: #555;">🔄 恢復預設橢圓形</button>
+            <h2>🗺️ 精準賽道編輯器</h2>
+            <p style="font-size: 14px; color: #aaa;">透過精準的 X/Y 軸滑桿來建立對稱的賽道，測試車輛物理極限。</p>
+            <div class="control-group">
+                <label>直線長度 (X軸半徑): <span id="val-rx">300</span></label>
+                <input type="range" id="map-rx" min="150" max="350" value="300">
+            </div>
+            <div class="control-group">
+                <label>彎道寬度 (Y軸半徑): <span id="val-ry">120</span></label>
+                <input type="range" id="map-ry" min="50" max="180" value="120">
+                <small style="color:#e74c3c; font-weight:bold;">*彎道越窄(數值越小)，離心力呈指數飆升！</small>
+            </div>
         </div>
 
         <div class="panel">
@@ -73,138 +79,82 @@
     <div class="main-view">
         <canvas id="track" width="800" height="400"></canvas>
         <br>
-        <button id="start-race" class="btn-primary">🏁 在這條賽道上開始比賽</button>
-        <h3 id="status-log" style="margin-top: 15px; color: var(--accent);">請畫出賽道或直接開始比賽！</h3>
+        <button id="start-race" class="btn-primary">🏁 開始模擬比賽</button>
+        <h3 id="status-log" style="margin-top: 15px; color: var(--accent);">準備就緒，請隨時起跑！</h3>
     </div>
 
 <script>
     const canvas = document.getElementById('track');
     const ctx = canvas.getContext('2d');
+    const mapRxInput = document.getElementById('map-rx');
+    const mapRyInput = document.getElementById('map-ry');
     const statusLog = document.getElementById('status-log');
     const racerListEl = document.getElementById('racer-list');
     const startRaceBtn = document.getElementById('start-race');
-    
     const addBtn = document.getElementById('add-racer');
     const cancelEditBtn = document.getElementById('cancel-edit');
     const garageTitle = document.getElementById('garage-title');
 
+    // 物理與起終點常數 (將起點放在正下方的直線區域)
+    const START_LINE = Math.PI / 2; 
+    const FINISH_LINE = START_LINE + (Math.PI * 2);
+
+    // UI 數值連動
+    document.getElementById('map-rx').oninput = (e) => { document.getElementById('val-rx').innerText = e.target.value; drawTrack(); }
+    document.getElementById('map-ry').oninput = (e) => { document.getElementById('val-ry').innerText = e.target.value; drawTrack(); }
     document.getElementById('r-cam').oninput = (e) => document.getElementById('val-cam').innerText = e.target.value;
     document.getElementById('r-cg').oninput = (e) => document.getElementById('val-cg').innerText = e.target.value;
 
     let racers = [];
     let crashMarks = []; 
     let isRacing = false;
-    let trackPoints = []; 
-    let isDrawingMode = false;
-    let isMouseDown = false;
     let editingIndex = -1; 
 
-    function createDefaultTrack() {
-        trackPoints = [];
-        const cx = 400, cy = 200, rx = 300, ry = 120;
-        for (let i = 0; i < 200; i++) {
-            const angle = (i / 200) * Math.PI * 2 + (Math.PI / 2); 
-            trackPoints.push({ x: cx + rx * Math.cos(angle), y: cy + ry * Math.sin(angle) });
-        }
-        processTrackPhysics();
-        drawTrack();
-        startRaceBtn.disabled = false;
-    }
-
-    function processTrackPhysics() {
-        if (trackPoints.length < 15) return; 
-        const step = 5; 
-        for (let i = 0; i < trackPoints.length; i++) {
-            const pCurrent = trackPoints[i];
-            const pNext = trackPoints[(i + step) % trackPoints.length]; 
-            const pPrev = trackPoints[(i - step + trackPoints.length) % trackPoints.length]; 
-
-            pCurrent.angle = Math.atan2(pNext.y - pCurrent.y, pNext.x - pCurrent.x);
-            let angleDiff = Math.abs(Math.atan2(pNext.y - pCurrent.y, pNext.x - pCurrent.x) - 
-                                     Math.atan2(pCurrent.y - pPrev.y, pCurrent.x - pPrev.x));
-            if (angleDiff > Math.PI) angleDiff = (Math.PI * 2) - angleDiff;
-            // 係數調整：保留一定程度的防手震，但依然反映真實角度
-            pCurrent.sharpness = angleDiff * 0.7; 
-        }
-    }
-
+    // --- 繪圖系統 ---
     function drawTrack() {
         ctx.clearRect(0, 0, canvas.width, canvas.height);
-        if (trackPoints.length === 0) return;
+        const rx = parseInt(mapRxInput.value);
+        const ry = parseInt(mapRyInput.value);
+        const cx = canvas.width / 2;
+        const cy = canvas.height / 2;
 
+        // 畫橢圓形賽道
         ctx.beginPath();
-        ctx.moveTo(trackPoints[0].x, trackPoints[0].y);
-        for (let i = 1; i < trackPoints.length; i++) {
-            ctx.lineTo(trackPoints[i].x, trackPoints[i].y);
-        }
+        ctx.ellipse(cx, cy, rx, ry, 0, 0, Math.PI * 2);
         ctx.lineWidth = 40;
         ctx.strokeStyle = '#444';
-        ctx.lineJoin = 'round';
-        ctx.lineCap = 'round';
         ctx.stroke();
 
-        ctx.beginPath(); ctx.arc(trackPoints[0].x, trackPoints[0].y, 6, 0, Math.PI*2);
-        ctx.fillStyle = '#00ff88'; ctx.fill(); ctx.lineWidth = 2; ctx.strokeStyle = '#000'; ctx.stroke();
+        // 畫終點線 (正下方)
+        ctx.beginPath();
+        ctx.moveTo(cx, cy + ry - 20);
+        ctx.lineTo(cx, cy + ry + 20);
+        ctx.lineWidth = 4;
+        ctx.strokeStyle = '#fff';
+        ctx.stroke();
     }
 
-    document.getElementById('btn-draw').addEventListener('click', () => {
-        isDrawingMode = true; isRacing = false; trackPoints = [];
-        canvas.classList.add('drawing-mode');
-        statusLog.style.color = "#3498db"; statusLog.innerText = "✍️ 繪圖模式：請在上方按住滑鼠畫出一圈賽道";
-        ctx.clearRect(0, 0, canvas.width, canvas.height);
-        startRaceBtn.disabled = true; 
-    });
-
-    document.getElementById('btn-default').addEventListener('click', () => {
-        isDrawingMode = false; canvas.classList.remove('drawing-mode');
-        statusLog.style.color = "var(--accent)"; statusLog.innerText = "已載入標準田徑賽道";
-        createDefaultTrack();
-    });
-
-    canvas.addEventListener('mousedown', (e) => {
-        if (!isDrawingMode) return;
-        isMouseDown = true; trackPoints = []; addPoint(e);
-    });
-
-    canvas.addEventListener('mousemove', (e) => {
-        if (!isDrawingMode || !isMouseDown) return;
-        const lastP = trackPoints[trackPoints.length - 1];
-        const rect = canvas.getBoundingClientRect();
-        const dist = Math.hypot((e.clientX - rect.left) - lastP.x, (e.clientY - rect.top) - lastP.y);
-        if (dist > 10) { addPoint(e); drawTrack(); }
-    });
-
-    canvas.addEventListener('mouseup', finishDrawing);
-    canvas.addEventListener('mouseleave', () => { if(isMouseDown) finishDrawing(); });
-
-    function addPoint(e) {
-        const rect = canvas.getBoundingClientRect();
-        trackPoints.push({ x: e.clientX - rect.left, y: e.clientY - rect.top });
+    function drawWheelchair(x, y, angle, color) {
+        ctx.save();
+        ctx.translate(x, y);
+        ctx.rotate(angle);
+        ctx.fillStyle = color;
+        ctx.fillRect(-15, -4, 30, 8); 
+        ctx.beginPath(); ctx.arc(15, 0, 4, 0, Math.PI*2); ctx.fill(); 
+        ctx.fillStyle = '#fff';
+        ctx.fillRect(-10, -12, 16, 4); 
+        ctx.fillRect(-10, 8, 16, 4);   
+        ctx.restore();
     }
 
-    function finishDrawing() {
-        if (!isDrawingMode || !isMouseDown) return;
-        isMouseDown = false; isDrawingMode = false; canvas.classList.remove('drawing-mode');
-        
-        if (trackPoints.length < 20) {
-            statusLog.style.color = "#e74c3c"; statusLog.innerText = "❌ 賽道太短了！請畫一圈完整的路線。"; trackPoints = []; return;
-        }
-
-        const distance = Math.hypot(trackPoints[trackPoints.length-1].x - trackPoints[0].x, trackPoints[trackPoints.length-1].y - trackPoints[0].y);
-
-        if (distance > 70) {
-            statusLog.style.color = "#e74c3c"; statusLog.innerText = "⚠️ 賽道未閉合！起終點距離太遠，請重新繪製。";
-            ctx.beginPath(); ctx.moveTo(trackPoints[trackPoints.length-1].x, trackPoints[trackPoints.length-1].y); ctx.lineTo(trackPoints[0].x, trackPoints[0].y);
-            ctx.strokeStyle = "rgba(231, 76, 60, 0.8)"; ctx.lineWidth = 5; ctx.setLineDash([10, 10]); ctx.stroke(); ctx.setLineDash([]);
-            trackPoints = []; startRaceBtn.disabled = true; return;
-        } else {
-            trackPoints.push({ x: trackPoints[0].x, y: trackPoints[0].y });
-            startRaceBtn.disabled = false; statusLog.style.color = "var(--accent)"; statusLog.innerText = "✅ 賽道閉合成功！可以開始比賽了。";
-        }
-
-        processTrackPhysics(); drawTrack();
+    function drawCrashes() {
+        crashMarks.forEach(mark => {
+            ctx.font = "20px sans-serif"; ctx.textAlign = "center"; ctx.fillText("💥", mark.x, mark.y);
+            ctx.font = "12px sans-serif"; ctx.fillStyle = mark.color; ctx.fillText(mark.name, mark.x, mark.y + 15);
+        });
     }
 
+    // --- 名單與編輯系統 ---
     function updateRacerList() {
         document.getElementById('racer-count').innerText = racers.length;
         racerListEl.innerHTML = '';
@@ -259,34 +209,25 @@
         const cg = parseFloat(document.getElementById('r-cg').value);
         const color = document.getElementById('r-color').value;
 
-        if (editingIndex === -1) { racers.push({ name, camber, cg, color, progress: 0, crashed: false }); } 
-        else { racers[editingIndex] = { name, camber, cg, color, progress: 0, crashed: false }; cancelEdit(); }
+        if (editingIndex === -1) { racers.push({ name, camber, cg, color, progress: START_LINE, crashed: false }); } 
+        else { racers[editingIndex] = { name, camber, cg, color, progress: START_LINE, crashed: false }; cancelEdit(); }
         updateRacerList();
     });
 
-    function drawWheelchair(x, y, angle, color) {
-        ctx.save(); ctx.translate(x, y); ctx.rotate(angle); ctx.fillStyle = color;
-        ctx.fillRect(-15, -4, 30, 8); ctx.beginPath(); ctx.arc(15, 0, 4, 0, Math.PI*2); ctx.fill(); 
-        ctx.fillStyle = '#fff'; ctx.fillRect(-10, -12, 16, 4); ctx.fillRect(-10, 8, 16, 4); ctx.restore();
-    }
-
-    function drawCrashes() {
-        crashMarks.forEach(mark => {
-            ctx.font = "20px sans-serif"; ctx.textAlign = "center"; ctx.fillText("💥", mark.x, mark.y);
-            ctx.font = "12px sans-serif"; ctx.fillStyle = mark.color; ctx.fillText(mark.name, mark.x, mark.y + 15);
-        });
-    }
-
+    // --- 核心物理引擎 (平衡調整版) ---
     startRaceBtn.addEventListener('click', () => {
         if (isRacing || racers.length === 0) return;
-        if (trackPoints.length === 0) { alert("請先畫賽道！"); return; }
         
         isRacing = true; updateRacerList(); 
-        crashMarks = []; racers.forEach(r => { r.progress = 0; r.crashed = false; }); 
+        crashMarks = []; racers.forEach(r => { r.progress = START_LINE; r.crashed = false; }); 
         statusLog.style.color = "white"; statusLog.innerText = "比賽進行中...";
 
+        const rx = parseInt(mapRxInput.value);
+        const ry = parseInt(mapRyInput.value);
+        const cx = canvas.width / 2;
+        const cy = canvas.height / 2;
+
         let currentLeader = null;
-        const finishIndex = trackPoints.length - 1;
 
         function animate() {
             if (!isRacing) return;
@@ -295,45 +236,50 @@
             let allFinishedOrCrashed = true;
 
             racers.forEach(p => {
-                if (p.crashed || p.progress >= finishIndex) return; 
+                if (p.crashed || p.progress >= FINISH_LINE) return; 
                 allFinishedOrCrashed = false; 
 
-                const pointIndex = Math.floor(p.progress);
-                const currentPoint = trackPoints[pointIndex];
+                // 利用 Cosine 判斷是否進入彎道 (橢圓左右兩側)
+                const inCurve = Math.abs(Math.cos(p.progress)) > 0.6; 
                 let speedStep = 0;
-                
-                // 判定是否為彎道 (臨界值設為 0.08)
-                const safeSharpness = Math.min(currentPoint.sharpness, 0.8);
 
-                if (safeSharpness > 0.08) { 
-                    // 在彎道中：高傾角稍微加快過彎，高重心稍微變慢
-                    speedStep = 1.2 + (p.camber * 0.04) - (p.cg * 0.015);
+                if (inCurve) {
+                    // 彎道中的基礎速度
+                    speedStep = 0.012 + (p.camber * 0.0004) - (p.cg * 0.00015);
                     
-                    // 離心力 vs 車輛抗性 的對決
-                    const curveForce = safeSharpness * 55; // 離心力放大係數
-                    const stabilityResistance = (p.camber * 1.5) - (p.cg * 1.0); // 傾角增加抗性，重心降低抗性
-                    const stability = stabilityResistance - curveForce;
+                    // 根據 Y 軸半徑計算彎道難度 (ry 越小，離心力越大)
+                    const curveDifficulty = 1000 / ry; 
                     
-                    // 如果抗性無法抵消離心力，且差值小於 -15 則翻車
-                    if (stability < -15) { 
+                    // 穩定度 = (傾角防禦) - (高重心扣分) - (彎道難度)
+                    const stability = (p.camber * 1.5) - (p.cg * 1.0) - curveDifficulty;
+                    
+                    // 容錯閾值設定為 -10
+                    if (stability < -10) { 
                         p.crashed = true;
-                        crashMarks.push({ x: currentPoint.x, y: currentPoint.y, color: p.color, name: p.name });
+                        const crashX = cx + rx * Math.cos(p.progress);
+                        const crashY = cy + ry * Math.sin(p.progress);
+                        crashMarks.push({ x: crashX, y: crashY, color: p.color, name: p.name });
                         return; 
                     }
                 } else {
-                    // 在直道中：低傾角速度極快，高傾角產生摩擦力大幅減速
-                    speedStep = 2.0 - (p.camber * 0.05) + (p.cg * 0.02);
+                    // 直道中的基礎速度 (傾角越高，摩擦力越大，直線越慢)
+                    speedStep = 0.020 - (p.camber * 0.0005) + (p.cg * 0.0002);
                 }
 
                 p.progress += speedStep;
-                if (p.progress >= finishIndex && !currentLeader) currentLeader = p;
+                if (p.progress >= FINISH_LINE && !currentLeader) currentLeader = p;
             });
 
+            // 畫面渲染
             racers.forEach(p => {
                 if (p.crashed) return; 
-                const drawIdx = Math.min(Math.floor(p.progress), finishIndex); 
-                const pt = trackPoints[drawIdx];
-                drawWheelchair(pt.x, pt.y, pt.angle, p.color);
+                const drawProg = Math.min(p.progress, FINISH_LINE); 
+                const x = cx + rx * Math.cos(drawProg);
+                const y = cy + ry * Math.sin(drawProg);
+                // 計算切線角度讓輪椅朝前
+                const angle = Math.atan2(ry * Math.cos(drawProg), -rx * Math.sin(drawProg));
+                
+                drawWheelchair(x, y, angle, p.color);
             });
 
             if (allFinishedOrCrashed) {
@@ -343,7 +289,7 @@
                     statusLog.innerText = `🏆 比賽結束！冠軍是：${currentLeader.name}`;
                 } else {
                     statusLog.style.color = "#e74c3c";
-                    statusLog.innerText = "💥 全軍覆沒！沒人能活著通過這個地獄賽道。";
+                    statusLog.innerText = "💥 全軍覆沒！沒人能活著通過這個極限彎道。";
                 }
                 return;
             }
@@ -352,12 +298,13 @@
         animate();
     });
 
-    createDefaultTrack();
-    // 預設三個流派，展示完美的平衡機制
-    racers.push({ name: "完美過彎 (龜速)", camber: 20, cg: 1, color: "#00ff88", progress: 0, crashed: false });
-    racers.push({ name: "直線火箭 (易翻)", camber: 0, cg: 10, color: "#3498db", progress: 0, crashed: false });
-    racers.push({ name: "綜合平衡 (推薦)", camber: 12, cg: 4, color: "#f39c12", progress: 0, crashed: false });
+    // 初始化與預設選手
+    drawTrack();
+    racers.push({ name: "完美過彎 (龜速)", camber: 20, cg: 1, color: "#00ff88", progress: START_LINE, crashed: false });
+    racers.push({ name: "直線火箭 (易翻)", camber: 0, cg: 10, color: "#3498db", progress: START_LINE, crashed: false });
+    racers.push({ name: "綜合平衡 (推薦)", camber: 12, cg: 4, color: "#f39c12", progress: START_LINE, crashed: false });
     updateRacerList();
+
 </script>
 </body>
 </html>
